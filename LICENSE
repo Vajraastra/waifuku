@@ -1,0 +1,81 @@
+WAIFUKU PERSONAL USE LICENSE
+Version 1.0 — 2026
+
+Copyright (c) 2026 David (nemphadus@gmail.com)
+
+─────────────────────────────────────────────────────────────────────────────
+TERMS AND CONDITIONS
+─────────────────────────────────────────────────────────────────────────────
+
+1. DEFINITIONS
+
+   "Software" refers to Waifuku and all its source code, assets, documentation,
+   and any associated files in this repository.
+
+   "Personal Use" means running, studying, or modifying the Software solely for
+   your own private, non-commercial purposes on your own hardware.
+
+   "Commercial Use" means any use of the Software — directly or indirectly — in
+   exchange for monetary compensation, including but not limited to: SaaS
+   products, hosted services, subscription platforms, API resale, bundling with
+   paid products, or any activity intended to generate revenue.
+
+   "Derivative Work" means any fork, modification, adaptation, or work based on
+   or incorporating the Software or any portion thereof.
+
+2. GRANT OF RIGHTS
+
+   Subject to the conditions below, the copyright holder grants you a
+   worldwide, royalty-free, non-exclusive license to:
+
+   a) Use the Software for Personal Use only.
+   b) Copy and modify the Software for Personal Use only.
+   c) Fork or create Derivative Works for Personal Use only.
+
+3. CONDITIONS
+
+   a) NON-COMMERCIAL — You may not use the Software or any Derivative Work for
+      Commercial Use of any kind. This restriction applies regardless of whether
+      the use is direct or indirect, partial or complete.
+
+   b) LOCAL USE ONLY — You may not deploy the Software or any Derivative Work as
+      a publicly accessible service, hosted application, or API endpoint available
+      to third parties outside your own household.
+
+   c) SHARE-ALIKE — Any Derivative Work you distribute or make available to
+      others must be licensed under these exact same terms. You may not apply any
+      license that removes, weakens, or supersedes these restrictions.
+
+   d) ATTRIBUTION — You must retain this license notice and all copyright
+      attributions in any copy or Derivative Work.
+
+   e) NO SUBLICENSING — You may not sublicense the Software or grant rights that
+      exceed those granted to you in this license.
+
+4. PROHIBITED USES (non-exhaustive examples)
+
+   - Offering Waifuku or a modified version as a SaaS, web service, or API.
+   - Selling access to a hosted instance of Waifuku.
+   - Including Waifuku in a paid product or subscription bundle.
+   - Using Waifuku to provide commercial AI companion or chat services.
+   - Redistribution of the Software or its assets for profit.
+
+5. DISCLAIMER OF WARRANTIES
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL
+   THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY,
+   WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF,
+   OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE.
+
+6. TERMINATION
+
+   This license is automatically terminated if you breach any of its terms.
+   Upon termination, you must cease all use and destroy all copies of the
+   Software in your possession.
+
+─────────────────────────────────────────────────────────────────────────────
+For commercial licensing inquiries: nemphadus@gmail.com
+─────────────────────────────────────────────────────────────────────────────

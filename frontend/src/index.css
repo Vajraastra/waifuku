@@ -1,0 +1,78 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Tema: dark (default) ─────────────────────────────────────────────────── */
+:root,
+[data-theme="dark"] {
+  --color-bg:          #0a0a0f;
+  --color-surface:     #12121a;
+  --color-surface-2:   #1a1a26;
+  --color-border:      rgba(255,255,255,0.08);
+  --color-border-accent: rgba(192,132,252,0.25);
+
+  --color-accent:      #c084fc;
+  --color-accent-dim:  rgba(192,132,252,0.15);
+  --color-cyan:        #67e8f9;
+  --color-green:       #86efac;
+
+  --color-text:        #e2e8f0;
+  --color-text-2:      #b0bec5;   /* secundario — legible */
+  --color-text-muted:  #7a8fa6;   /* muted — aún legible */
+  --color-text-faint:  #4a5f72;   /* decorativo / muy secundario */
+
+  --font-ui:     'Inter', system-ui, sans-serif;
+  --font-dialog: 'Georgia', serif;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+}
+
+/* ── Tema: light (base) ──────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --color-bg:          #f4f4f8;
+  --color-surface:     #ffffff;
+  --color-surface-2:   #ebebf2;
+  --color-border:      rgba(0,0,0,0.08);
+  --color-border-accent: rgba(139,92,246,0.3);
+
+  --color-accent:      #8b5cf6;
+  --color-accent-dim:  rgba(139,92,246,0.12);
+  --color-cyan:        #0891b2;
+  --color-green:       #16a34a;
+
+  --color-text:        #1a1a2e;
+  --color-text-2:      #3d4a5c;
+  --color-text-muted:  #5a6a7d;
+  --color-text-faint:  #8a9ab0;
+
+  --font-ui:     'Inter', system-ui, sans-serif;
+  --font-dialog: 'Georgia', serif;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+}
+
+/* ── Base ────────────────────────────────────────────────────────────────── */
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-ui);
+  transition: background 0.3s, color 0.3s;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: inherit;
+}
+
+a { text-decoration: none; color: inherit; }

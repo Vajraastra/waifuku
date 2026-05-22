@@ -1,0 +1,23 @@
+venv/
+CLAUDE.md
+TASKS.md
+BITACORA.md
+THEMES.md
+SLOTS.md
+__pycache__/
+*.pyc
+*.pyo
+.env
+.env.*
+node_modules/
+dist/
+build/
+.DS_Store
+*.log
+
+# Datos privados de usuario
+data/chats/
+data/personas/
+
+# Configuración local del editor
+.claude/
