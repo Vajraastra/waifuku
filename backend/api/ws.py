@@ -14,6 +14,8 @@ Protocolo servidor → cliente:
   {"type": "pong"}
 """
 import json
+import logging
+import httpx
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from backend.core import Chat, MessageRole, Item
@@ -24,6 +26,10 @@ from backend.inference.providers import get_provider, ProviderConfig
 from backend.inference.providers.base import THINKING_PREFIX
 
 router = APIRouter(tags=["websocket"])
+logger = logging.getLogger("waifuku.inference")
+
+# Ventana de contexto por defecto cuando no se puede autodetectar ni hay valor manual.
+DEFAULT_CONTEXT_BUDGET = 4096
 
 
 async def _send(ws: WebSocket, payload: dict):
@@ -78,6 +84,48 @@ def _parse_config(config_raw: dict) -> ProviderConfig:
         thinking=      bool(config_raw.get("thinking", False)),
         num_ctx=       int(config_raw.get("num_ctx", 0)),
     )
+
+
+async def _detect_lmstudio_context(base_url: str, model: str) -> int:
+    """Autodetecta la ventana de contexto del modelo cargado en LM Studio.
+
+    Usa la API nativa `GET {base_url}/api/v0/models`. Prefiere `loaded_context_length`
+    (la ventana realmente cargada) sobre `max_context_length`. Devuelve 0 si no se puede
+    determinar (server caído, endpoint ausente, ningún modelo cargado).
+    """
+    if not base_url:
+        return 0
+    url = base_url.rstrip("/") + "/api/v0/models"
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            payload = resp.json()
+    except Exception:
+        return 0
+
+    items = payload.get("data", []) if isinstance(payload, dict) else payload
+    loaded = [m for m in items if isinstance(m, dict) and m.get("state") == "loaded"]
+    if not loaded:
+        return 0
+    chosen = next((m for m in loaded if m.get("id") == model), loaded[0])
+    return int(chosen.get("loaded_context_length") or chosen.get("max_context_length") or 0)
+
+
+async def _resolve_context_budget(config: ProviderConfig) -> int:
+    """Resuelve la ventana de contexto (tokens) a usar como presupuesto.
+
+    LM Studio (openai_compat): autodetecta; cae al valor manual y luego al default.
+    Ollama/otros: valor manual del usuario o default.
+    """
+    manual = config.num_ctx if config.num_ctx > 0 else 0
+    if config.provider == "openai_compat":
+        detected = await _detect_lmstudio_context(config.base_url, config.model)
+        if detected > 0:
+            return detected
+    if manual > 0:
+        return manual
+    return DEFAULT_CONTEXT_BUDGET
 
 
 async def _stream_to_ws(ws: WebSocket, provider, messages) -> str:
@@ -172,16 +220,32 @@ async def _handle_generate(ws: WebSocket, chat_id: str, msg: dict):
             if result and result.summary:
                 agent_context += f"\n\n{result.summary}"
 
-    # Construir prompt (con items activos, slots resueltos y contexto agéntico)
+    try:
+        config = _parse_config(config_raw)
+    except ValueError as e:
+        await _send(ws, {"type": "error", "message": str(e)})
+        return
+
+    # Presupuesto de contexto provider-agnóstico
+    budget = await _resolve_context_budget(config)
+    if config.provider == "ollama":
+        config.num_ctx = budget  # Ollama aloja exactamente esta ventana
+
+    # Construir prompt (items activos, slots resueltos, contexto agéntico + recorte por presupuesto)
+    stats: dict = {}
     messages = build_messages(
         character, persona, chat,
         active_items=active_items,
         helper_mode=helper_mode,
         agent_context=agent_context,
+        context_budget=budget,
+        max_tokens=config.max_tokens,
+        stats=stats,
     )
+    _log_inference("generate", config, stats)
 
     try:
-        provider = get_provider(_parse_config(config_raw))
+        provider = get_provider(config)
     except ValueError as e:
         await _send(ws, {"type": "error", "message": str(e)})
         return
@@ -202,6 +266,16 @@ async def _handle_generate(ws: WebSocket, chat_id: str, msg: dict):
     })
 
 
+def _log_inference(kind: str, config: ProviderConfig, stats: dict):
+    logger.info(
+        "[%s] provider=%s model=%s budget=%d effective=%d est_tokens=%d msgs=%d recortados=%d",
+        kind, config.provider, config.model,
+        stats.get("context_budget", 0), stats.get("effective_budget", 0),
+        stats.get("estimated_total", 0), stats.get("messages_sent", 0),
+        stats.get("messages_dropped", 0),
+    )
+
+
 async def _handle_regenerate(ws: WebSocket, chat_id: str, msg: dict):
     """Regenera la última respuesta del asistente sin guardar un nuevo mensaje de usuario."""
     try:
@@ -219,14 +293,29 @@ async def _handle_regenerate(ws: WebSocket, chat_id: str, msg: dict):
     config_raw  = msg.get("config", {})
     helper_mode = bool(config_raw.get("helper_mode", False))
 
+    try:
+        config = _parse_config(config_raw)
+    except ValueError as e:
+        await _send(ws, {"type": "error", "message": str(e)})
+        return
+
+    budget = await _resolve_context_budget(config)
+    if config.provider == "ollama":
+        config.num_ctx = budget
+
+    stats: dict = {}
     messages = build_messages(
         character, persona, chat,
         active_items=active_items,
         helper_mode=helper_mode,
+        context_budget=budget,
+        max_tokens=config.max_tokens,
+        stats=stats,
     )
+    _log_inference("regenerate", config, stats)
 
     try:
-        provider = get_provider(_parse_config(config_raw))
+        provider = get_provider(config)
     except ValueError as e:
         await _send(ws, {"type": "error", "message": str(e)})
         return

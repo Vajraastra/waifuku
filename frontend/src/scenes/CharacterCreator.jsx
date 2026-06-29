@@ -12,6 +12,7 @@ const EMPTY_FORM = {
   mes_example: '',
   system_prompt: '',
   post_history_instructions: '',
+  character_reminder: '',
   alternate_greetings: [],
   tags: [],
   creator: '',
@@ -305,6 +306,7 @@ export function CharacterCreator() {
         mes_example:               char.mes_example               ?? '',
         system_prompt:             char.system_prompt             ?? '',
         post_history_instructions: char.post_history_instructions ?? '',
+        character_reminder:        char.character_reminder        ?? '',
         alternate_greetings:       char.alternate_greetings       ?? [],
         tags:                      char.tags                      ?? [],
         creator:                   char.creator                   ?? '',
@@ -550,6 +552,18 @@ export function CharacterCreator() {
                   placeholder={t('creator.placeholder_post_history')}
                   value={form.post_history_instructions}
                   onChange={e => setField('post_history_instructions', e.target.value)}
+                />
+              </div>
+
+              {/* Recordatorio de personaje (re-inyección a profundidad) */}
+              <div style={S.field}>
+                <label style={S.label}>{t('creator.field_reminder')}</label>
+                <span style={S.hint}>{t('creator.hint_reminder')}</span>
+                <textarea
+                  style={S.textarea(3)}
+                  placeholder={t('creator.placeholder_reminder')}
+                  value={form.character_reminder}
+                  onChange={e => setField('character_reminder', e.target.value)}
                 />
               </div>
 

@@ -4,6 +4,7 @@ from typing import AsyncIterator
 from .base import BaseProvider, ProviderConfig, ChatMessage, THINKING_PREFIX
 
 DEFAULT_BASE_URL = "http://localhost:11434"
+DEFAULT_NUM_CTX = 4096  # ventana por defecto si no llega un presupuesto explícito
 
 
 class OllamaProvider(BaseProvider):
@@ -19,8 +20,8 @@ class OllamaProvider(BaseProvider):
             options["top_k"] = self.config.top_k
         if self.config.repeat_penalty != 1.0:
             options["repeat_penalty"] = self.config.repeat_penalty
-        if self.config.num_ctx > 0:
-            options["num_ctx"] = self.config.num_ctx
+        # num_ctx SIEMPRE: ws.py inyecta el presupuesto resuelto; default sensato como respaldo.
+        options["num_ctx"] = self.config.num_ctx if self.config.num_ctx > 0 else DEFAULT_NUM_CTX
 
         payload = {
             "model":    self.config.model,

@@ -17,6 +17,7 @@ class CharacterCreate(BaseModel):
     creator_notes: str = ""
     system_prompt: str = ""
     post_history_instructions: str = ""
+    character_reminder: str = ""
     alternate_greetings: List[str] = []
     creator: str = ""
     character_version: str = ""
@@ -33,6 +34,7 @@ class CharacterUpdate(BaseModel):
     creator_notes: Optional[str] = None
     system_prompt: Optional[str] = None
     post_history_instructions: Optional[str] = None
+    character_reminder: Optional[str] = None
     alternate_greetings: Optional[List[str]] = None
     creator: Optional[str] = None
     character_version: Optional[str] = None
@@ -51,6 +53,7 @@ class CharacterResponse(BaseModel):
     creator_notes: str
     system_prompt: str
     post_history_instructions: str
+    character_reminder: str
     alternate_greetings: List[str]
     creator: str
     character_version: str

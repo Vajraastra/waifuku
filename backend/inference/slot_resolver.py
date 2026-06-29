@@ -110,6 +110,7 @@ def resolve_character(character, active_items: List[Item]) -> dict:
             "post_history":        character.post_history_instructions,
             "mes_example":         character.mes_example,
             "first_mes":           character.first_mes,
+            "character_reminder":  getattr(character, "character_reminder", ""),
         }
 
     type_map = _build_type_map(active_items)
@@ -123,6 +124,7 @@ def resolve_character(character, active_items: List[Item]) -> dict:
         "post_history":        resolve_text(character.post_history_instructions, type_map),
         "mes_example":         resolve_text(character.mes_example,   type_map),
         "first_mes":           resolve_text(character.first_mes,     type_map),
+        "character_reminder":  resolve_text(getattr(character, "character_reminder", ""), type_map),
     }
 
     # 2. Aplicar effects (append y field replace)
@@ -147,4 +149,5 @@ def resolve_character(character, active_items: List[Item]) -> dict:
         "post_history":        fields_after["post_history_field"] or fields_after["post_history"],
         "mes_example":         fields_after["mes_example"],
         "first_mes":           fields_after["first_mes"],
+        "character_reminder":  resolved["character_reminder"],
     }
