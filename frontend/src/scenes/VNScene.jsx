@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { HexColorPicker } from 'react-colorful'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useChat }          from '../hooks/useChat'
@@ -15,7 +16,11 @@ import { LLMStatsHUD }      from '../components/LLMStatsHUD'
 export function VNScene() {
   const { chatId }    = useParams()
   const navigate      = useNavigate()
-  const [character, setCharacter] = useState(null)
+  const { t }         = useTranslation()
+  const [character,        setCharacter]        = useState(null)
+  const [activeItemIds,    setActiveItemIds]    = useState([])
+  const [sidebarExpanded,  setSidebarExpanded]  = useState(false)
+  const [showItemPanel,    setShowItemPanel]    = useState(false)
 
   const { messages, isPending, isStreaming, streamingContent, sendMessage, regenerate, loadHistory } = useChat(chatId)
   const updateMessage    = useChatStore(s => s.updateMessage)
@@ -25,11 +30,14 @@ export function VNScene() {
   const chatFontSize     = useConfigStore(s => s.chatFontSize)
   const showLLMStats     = useConfigStore(s => s.showLLMStats)
 
-  // Carga personaje desde el chat — funciona aunque se navegue por URL directa
+  // Carga personaje y active_item_ids desde el chat
   useEffect(() => {
     if (!chatId) return
     api.chats.get(chatId)
-      .then(chat => chat.character_id ? api.characters.get(chat.character_id) : null)
+      .then(chat => {
+        setActiveItemIds(chat.active_item_ids ?? [])
+        return chat.character_id ? api.characters.get(chat.character_id) : null
+      })
       .then(char => { if (char) setCharacter(char) })
       .catch(console.error)
   }, [chatId])
@@ -40,11 +48,12 @@ export function VNScene() {
   }, [chatId])
 
   const bgUrl = sceneBackground ? api.backgrounds.url(sceneBackground) : null
+  const hasBg  = !!bgUrl
 
   return (
     <div style={{
       ...S.root,
-      ...(bgUrl ? {
+      ...(hasBg ? {
         backgroundImage: `url(${bgUrl})`,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
@@ -57,7 +66,7 @@ export function VNScene() {
       <SceneTopBar character={character} chatId={chatId} navigate={navigate} hasBg={!!bgUrl} />
 
       {/* main tiene position:relative para que InputBar se posicione dentro */}
-      <div style={{ ...S.main, background: bgUrl ? 'transparent' : undefined }}>
+      <div style={{ ...S.main, background: hasBg ? 'transparent' : undefined }}>
         <ChatPanel
           messages={messages}
           character={character}
@@ -71,10 +80,31 @@ export function VNScene() {
           disabled={isPending || isStreaming}
           chatOpacity={chatOpacity}
           chatFontSize={chatFontSize ?? 0.88}
-          hasBg={!!bgUrl}
+          hasBg={hasBg}
         />
-        <SpritePanel character={character} transparent={!!bgUrl} />
-        <InputBar onSend={sendMessage} disabled={isStreaming || !chatId} hasBg={!!bgUrl} chatOpacity={chatOpacity} />
+        <SpritePanel character={character} transparent={hasBg} />
+        <RightSidebar
+          expanded={sidebarExpanded}
+          onExpandedChange={(v) => { setSidebarExpanded(v); if (!v) setShowItemPanel(false) }}
+          showItemPanel={showItemPanel}
+          onItemPanelToggle={() => setShowItemPanel(v => !v)}
+        />
+        <InputBar onSend={sendMessage} disabled={isStreaming || !chatId} hasBg={hasBg} chatOpacity={chatOpacity} />
+
+        {/* Barra de items — ancho desde el chat hasta el borde derecho, encima del InputBar */}
+        {showItemPanel && chatId && (
+          <div style={S.itemsBar(chatOpacity, hasBg)}>
+            <div style={S.itemsBarHeader}>
+              <h4 style={S.itemsBarTitle}>{t('items.title')}</h4>
+              <button style={S.itemsPopupClose} onClick={() => setShowItemPanel(false)}>✕</button>
+            </div>
+            <ItemsPanel
+              chatId={chatId}
+              activeItemIds={activeItemIds}
+              onActiveItemsChange={setActiveItemIds}
+            />
+          </div>
+        )}
       </div>
 
       {showLLMStats && <LLMStatsHUD hasBg={!!bgUrl} />}
@@ -196,10 +226,13 @@ function SceneTopBar({ character, chatId, navigate, hasBg }) {
 }
 
 function SceneSettingsPanel({ hasBg }) {
-  const { t }        = useTranslation()
-  const chatOpacity  = useConfigStore(s => s.chatOpacity)
-  const chatFontSize = useConfigStore(s => s.chatFontSize)
-  const setConfig    = useConfigStore(s => s.setConfig)
+  const { t }              = useTranslation()
+  const chatOpacity        = useConfigStore(s => s.chatOpacity)
+  const chatFontSize       = useConfigStore(s => s.chatFontSize)
+  const chromaKeyEnabled   = useConfigStore(s => s.chromaKeyEnabled)
+  const chromaKeyColor     = useConfigStore(s => s.chromaKeyColor)
+  const chromaKeyThreshold = useConfigStore(s => s.chromaKeyThreshold)
+  const setConfig          = useConfigStore(s => s.setConfig)
 
   function NumInput({ value, min, max, step, onChange }) {
     const [raw, setRaw] = useState(String(value))
@@ -273,6 +306,76 @@ function SceneSettingsPanel({ hasBg }) {
           {t('vn.preview_text')}
         </span>
       </div>
+
+      <div style={S.settingsDivider} />
+
+      {/* Chroma key */}
+      <div style={S.settingsRow}>
+        <span style={S.settingsLabel}>{t('vn.chroma_label')}</span>
+        <button
+          onClick={() => setConfig({ chromaKeyEnabled: !chromaKeyEnabled })}
+          style={{
+            padding: '0.15rem 0.65rem',
+            background: chromaKeyEnabled ? 'var(--color-accent)' : 'transparent',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-sm)',
+            color: chromaKeyEnabled ? '#000' : 'var(--color-text-muted)',
+            fontSize: '0.72rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            fontFamily: 'var(--font-ui)',
+            transition: 'background 0.15s, color 0.15s',
+          }}
+        >
+          {chromaKeyEnabled ? 'ON' : 'OFF'}
+        </button>
+      </div>
+
+      {chromaKeyEnabled && (<>
+        {/* Color picker inline */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <HexColorPicker
+            color={chromaKeyColor ?? '#ffffff'}
+            onChange={v => setConfig({ chromaKeyColor: v })}
+            style={{ width: '100%', height: '140px' }}
+          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{
+              width: '26px', height: '26px', flexShrink: 0,
+              borderRadius: 'var(--radius-sm)',
+              background: chromaKeyColor ?? '#ffffff',
+              border: '1px solid var(--color-border)',
+            }} />
+            <input
+              type="text"
+              value={chromaKeyColor ?? '#ffffff'}
+              maxLength={7}
+              onChange={e => {
+                const v = e.target.value
+                if (/^#[0-9a-fA-F]{0,6}$/.test(v)) setConfig({ chromaKeyColor: v })
+              }}
+              style={{ ...S.settingsNumInput, width: '90px', textAlign: 'left', flex: 1 }}
+            />
+            <span style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', fontFamily: 'var(--font-ui)' }}>
+              {t('vn.chroma_color')}
+            </span>
+          </div>
+        </div>
+
+        {/* Threshold */}
+        <div style={S.settingsRow}>
+          <span style={S.settingsLabel}>{t('vn.chroma_threshold')}</span>
+          <span style={S.settingsVal}>{chromaKeyThreshold ?? 30}</span>
+        </div>
+        <div style={S.settingsSliderRow}>
+          <input
+            type="range" min="5" max="120" step="1"
+            value={chromaKeyThreshold ?? 30}
+            onChange={e => setConfig({ chromaKeyThreshold: parseInt(e.target.value) })}
+            style={S.settingsSlider}
+          />
+        </div>
+      </>)}
     </div>
   )
 }
@@ -529,6 +632,129 @@ function SpritePanel({ character, transparent }) {
   )
 }
 
+// ── Right Sidebar ─────────────────────────────────────────────────────────────
+
+function ItemDetailPopup({ item, isActive, onToggle, onClose }) {
+  const { t } = useTranslation()
+  return (
+    <div style={S.itemDetail}>
+      <div style={S.itemDetailTop}>
+        <span style={S.itemDetailIcon}>{item.icon}</span>
+        <div>
+          <div style={S.itemDetailName}>{item.name}</div>
+          <div style={S.itemDetailType}>{'{{'}{item.type}{':…}}'}</div>
+        </div>
+      </div>
+      {item.value && <div style={S.itemDetailValue}>{item.value}</div>}
+      {item.effects.length > 0 && (
+        <div style={S.itemDetailEffects}>
+          {t('items.effects_count', { count: item.effects.length })}
+          {': '}{item.effects.map(e => e.target).join(', ')}
+        </div>
+      )}
+      <div style={S.itemDetailActions}>
+        <button style={S.itemDetailCancel} onClick={onClose}>{t('common.cancel')}</button>
+        <button style={S.itemDetailActivate(isActive)} onClick={onToggle}>
+          {isActive ? t('items.deactivate') : t('items.activate')}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ItemsPanel({ chatId, activeItemIds, onActiveItemsChange }) {
+  const { t } = useTranslation()
+  const [items,      setItems]      = useState([])
+  const [selected,   setSelected]   = useState(null)  // item para el detail popup
+  const [loading,    setLoading]    = useState(true)
+
+  useEffect(() => {
+    api.items.list()
+      .then(list => { setItems(Array.isArray(list) ? list : []); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
+
+  async function toggleItem(item) {
+    const isActive = activeItemIds.includes(item.id)
+    const next = isActive
+      ? activeItemIds.filter(id => id !== item.id)
+      : [...activeItemIds, item.id]
+    try {
+      await api.chats.setActiveItems(chatId, next)
+      onActiveItemsChange(next)
+    } catch (e) {
+      console.error(e)
+    }
+    setSelected(null)
+  }
+
+  if (loading) return (
+    <div style={{ padding: '1rem', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+      {t('common.loading')}
+    </div>
+  )
+
+  return (
+    <div style={{ position: 'relative' }}>
+      {selected && (
+        <ItemDetailPopup
+          item={selected}
+          isActive={activeItemIds.includes(selected.id)}
+          onToggle={() => toggleItem(selected)}
+          onClose={() => setSelected(null)}
+        />
+      )}
+      {items.length === 0 ? (
+        <div style={{ minHeight: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+          {t('items.panel_empty')}
+        </div>
+      ) : (
+        <div style={S.itemsGrid}>
+          {items.map(item => {
+            const active = activeItemIds.includes(item.id)
+            return (
+              <button
+                key={item.id}
+                style={S.itemCell(active)}
+                onClick={() => setSelected(selected?.id === item.id ? null : item)}
+                title={item.name}
+              >
+                <span style={S.itemCellIcon}>{item.icon}</span>
+                <span style={S.itemCellName}>{item.name}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RightSidebar({ expanded, onExpandedChange, showItemPanel, onItemPanelToggle }) {
+  const { t } = useTranslation()
+
+  return (
+    <div style={S.sidebar(expanded)}>
+      {/* Toggle tab */}
+      <button
+        style={S.sidebarToggle}
+        onClick={() => onExpandedChange(!expanded)}
+        title={expanded ? t('items.sidebar_collapse') : t('items.sidebar_expand')}
+      >
+        {expanded ? '›' : '‹'}
+      </button>
+
+      {/* Botones visibles solo cuando está expandida */}
+      {expanded && (
+        <button style={S.sidebarBtn(showItemPanel)} onClick={onItemPanelToggle}>
+          <span style={S.sidebarBtnIcon}>◈</span>
+          <span style={S.sidebarBtnLabel(showItemPanel)}>{t('items.title')}</span>
+        </button>
+      )}
+    </div>
+  )
+}
+
 // ── Estilos ───────────────────────────────────────────────────────────────────
 
 const S = {
@@ -552,19 +778,21 @@ const S = {
     background: 'var(--color-surface)',
     borderBottom: '1px solid var(--color-border)',
     flexShrink: 0,
-    zIndex: 10,
+    position: 'relative',  // necesario para que zIndex cree stacking context sobre el sidebar
+    zIndex: 25,
   },
   backBtn: {
-    padding: '0.38rem 1rem',
+    padding: '0.4rem 1.1rem',
     background: 'var(--color-accent-dim)',
-    border: '1px solid var(--color-border-accent)',
+    border: '1px solid var(--color-accent)',
     borderRadius: 'var(--radius-sm)',
     color: 'var(--color-accent)',
-    fontSize: '0.82rem',
+    fontSize: '0.86rem',
     fontFamily: 'var(--font-ui)',
     letterSpacing: '0.5px',
     cursor: 'pointer',
     flexShrink: 0,
+    fontWeight: 600,
   },
   topCenter: {
     flex: 1,
@@ -593,18 +821,19 @@ const S = {
     flexShrink: 0,
   },
   actionBtn: {
-    padding: '0.32rem 0.75rem',
+    padding: '0.36rem 0.85rem',
     background: 'transparent',
     border: '1px solid var(--color-border)',
     borderRadius: 'var(--radius-sm)',
-    color: 'var(--color-text-muted)',
-    fontSize: '0.78rem',
+    color: 'var(--color-text-2)',
+    fontSize: '0.82rem',
     fontFamily: 'var(--font-ui)',
     cursor: 'pointer',
     letterSpacing: '0.3px',
   },
   actionBtnIcon: {
-    padding: '0.32rem 0.6rem',
+    padding: '0.36rem 0.75rem',
+    fontSize: '1.1rem',
   },
   themeSelect: {
     background: 'var(--color-surface-2)',
@@ -872,10 +1101,10 @@ const S = {
   msgActionBtn: {
     background: 'transparent',
     border: 'none',
-    color: 'var(--color-text-muted)',
-    fontSize: '0.8rem',
+    color: 'var(--color-text-2)',
+    fontSize: '1rem',
     cursor: 'pointer',
-    padding: '0.1rem 0.3rem',
+    padding: '0.15rem 0.4rem',
     borderRadius: '3px',
     fontFamily: 'var(--font-ui)',
     lineHeight: 1,
@@ -888,4 +1117,173 @@ const S = {
     overflow: 'hidden',
     background: 'var(--color-bg)',
   },
+
+  // Right sidebar — colapsable
+  sidebar: (expanded) => ({
+    width: expanded ? '120px' : '36px',
+    minWidth: expanded ? '120px' : '36px',
+    flexShrink: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    background: 'var(--color-surface)',
+    borderLeft: '1px solid var(--color-border-accent)',
+    transition: 'width 0.2s ease, min-width 0.2s ease',
+    overflow: 'hidden',
+    position: 'relative',
+    zIndex: 20,
+  }),
+  sidebarToggle: {
+    width: '36px',
+    height: '56px',
+    flexShrink: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'var(--color-accent-dim)',
+    border: 'none',
+    borderBottom: '1px solid var(--color-border-accent)',
+    cursor: 'pointer',
+    color: 'var(--color-accent)',
+    fontSize: '1.3rem',
+    alignSelf: 'flex-end',
+  },
+  sidebarBtn: (active) => ({
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '0.4rem',
+    padding: '1rem 0.4rem',
+    background: active ? 'var(--color-accent-dim)' : 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    width: '100%',
+    borderLeft: active ? '3px solid var(--color-accent)' : '3px solid transparent',
+    transition: 'background 0.15s',
+  }),
+  sidebarBtnIcon: { fontSize: '1.8rem', lineHeight: 1 },
+  sidebarBtnLabel: (active) => ({
+    fontSize: '0.7rem',
+    color: active ? 'var(--color-accent)' : 'var(--color-text-2)',
+    letterSpacing: '0.8px',
+    textTransform: 'uppercase',
+    whiteSpace: 'nowrap',
+    fontWeight: active ? 700 : 400,
+  }),
+
+  // Panel de items — sobre la zona del sprite, transparente, 3 filas
+  itemsBar: (chatOpacity, hasBg) => ({
+    position: 'absolute',
+    bottom: '112px',   // encima del InputBar (DEFAULT_H = 112px)
+    left: '42%',
+    right: 0,
+    background: hasBg
+      ? `rgba(8, 8, 18, ${(chatOpacity ?? 0.85) * 0.82})`
+      : 'rgba(15, 15, 30, 0.82)',
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
+    borderTop: '1px solid var(--color-accent)',
+    zIndex: 30,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+  }),
+  itemsBarHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '0.45rem 1rem',
+    borderBottom: '1px solid var(--color-border-accent)',
+    flexShrink: 0,
+    background: 'rgba(var(--color-accent-rgb, 168,85,247), 0.08)',
+  },
+  itemsBarTitle: {
+    fontSize: '0.72rem',
+    letterSpacing: '3px',
+    textTransform: 'uppercase',
+    color: 'var(--color-accent)',
+    fontWeight: 700,
+    margin: 0,
+  },
+  itemsPopupClose: {
+    background: 'transparent',
+    border: '1px solid var(--color-border)',
+    borderRadius: 'var(--radius-sm)',
+    cursor: 'pointer',
+    color: 'var(--color-text-2)',
+    fontSize: '1rem',
+    padding: '0.15rem 0.5rem',
+    lineHeight: 1,
+  },
+  itemsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))',
+    gap: '0.5rem',
+    padding: '0.65rem 0.85rem',
+    overflowY: 'auto',
+    minHeight: '200px',  // siempre reserva espacio para 3 filas aunque esté vacío
+    maxHeight: '216px',
+    scrollbarWidth: 'thin',
+    scrollbarColor: 'var(--color-border) transparent',
+  },
+  itemCell: (active) => ({
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '0.3rem',
+    padding: '0.55rem 0.3rem',
+    background: active ? 'rgba(var(--color-accent-rgb, 168,85,247), 0.25)' : 'rgba(255,255,255,0.06)',
+    border: `1px solid ${active ? 'var(--color-accent)' : 'rgba(255,255,255,0.14)'}`,
+    borderRadius: 'var(--radius-sm)',
+    cursor: 'pointer',
+    transition: 'border-color 0.15s, background 0.15s, box-shadow 0.15s',
+    boxShadow: active ? '0 0 8px color-mix(in srgb, var(--color-accent) 40%, transparent)' : 'none',
+  }),
+  itemCellIcon: { fontSize: '1.8rem', lineHeight: 1 },
+  itemCellName: {
+    fontSize: '0.62rem',
+    color: 'var(--color-text-2)',
+    textAlign: 'center',
+    lineHeight: 1.2,
+    wordBreak: 'break-word',
+    maxWidth: '100%',
+  },
+
+  // Item detail popup
+  itemDetail: {
+    position: 'absolute',
+    bottom: '100%',
+    right: 0,
+    width: '260px',
+    background: 'var(--color-bg)',
+    border: '1px solid var(--color-border)',
+    borderRadius: 'var(--radius)',
+    boxShadow: '0 -2px 16px rgba(0,0,0,0.4)',
+    padding: '0.85rem',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.55rem',
+    zIndex: 60,
+  },
+  itemDetailTop: { display: 'flex', alignItems: 'center', gap: '0.6rem' },
+  itemDetailIcon: { fontSize: '1.8rem', lineHeight: 1, flexShrink: 0 },
+  itemDetailName: { fontSize: '0.88rem', fontWeight: 600, color: 'var(--color-text)' },
+  itemDetailType: { fontSize: '0.65rem', color: 'var(--color-accent)', fontFamily: 'monospace' },
+  itemDetailValue: {
+    fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: 1.5,
+    padding: '0.4rem 0.5rem', background: 'var(--color-surface-2)',
+    borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)',
+  },
+  itemDetailEffects: { fontSize: '0.65rem', color: 'var(--color-text-faint)' },
+  itemDetailActions: { display: 'flex', gap: '0.4rem', justifyContent: 'flex-end', marginTop: '0.1rem' },
+  itemDetailCancel: {
+    padding: '0.35rem 0.75rem', background: 'transparent', cursor: 'pointer',
+    border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)',
+    color: 'var(--color-text-muted)', fontSize: '0.75rem',
+  },
+  itemDetailActivate: (active) => ({
+    padding: '0.35rem 0.85rem', border: 'none', cursor: 'pointer',
+    borderRadius: 'var(--radius-sm)', fontSize: '0.75rem', fontWeight: 700,
+    background: active ? '#ef4444' : 'var(--color-accent)',
+    color: active ? '#fff' : '#000',
+  }),
 }

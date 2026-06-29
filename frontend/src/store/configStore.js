@@ -33,6 +33,11 @@ export const useConfigStore = create(
       chatOpacity: 0.85,
       chatFontSize: 0.88,
 
+      // Sprite — transparencia chroma key
+      chromaKeyEnabled:   false,
+      chromaKeyColor:     '#ffffff',  // color a eliminar (blanco por defecto)
+      chromaKeyThreshold: 30,         // tolerancia 0-255
+
       // Contexto y HUD de stats
       numCtx: 0,           // 0 = default del modelo; >0 = valor explícito
       autoNumCtx: false,   // calcular num_ctx automáticamente según VRAM
@@ -43,6 +48,17 @@ export const useConfigStore = create(
       activePersonaId: null,
       setActiveCharacter: (id) => set({ activeCharacterId: id }),
       setActivePersona:  (id) => set({ activePersonaId: id }),
+
+      // Herramientas agénticas activas
+      activeTools: {
+        web_search:    false,
+        url_reader:    false,
+        image_search:  false,
+        vision_filter: false,
+      },
+      setActiveTool: (tool, enabled) => set(state => ({
+        activeTools: { ...state.activeTools, [tool]: enabled },
+      })),
 
       getProviderConfig: (state) => ({
         provider:       state.provider,

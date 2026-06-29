@@ -9,8 +9,8 @@ import { applyTextEffect } from '../lib/textEffects'
 import { TopBar } from '../components/Layout'
 
 const CARD_DEFS = (t) => [
-  { to: '/characters', key: 'rp', icon: '✦', accentVar: '--color-accent' },
-  { to: '/vanilla', key: 'vanilla', icon: '◈', accentVar: '--color-cyan'   },
+  { to: '/characters',             key: 'rp',     icon: '✦', accentVar: '--color-accent' },
+  { to: '/characters?mode=helper', key: 'helper', icon: '◈', accentVar: '--color-cyan'  },
 ]
 
 export function Welcome() {

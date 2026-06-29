@@ -3,14 +3,19 @@ Stats de hardware del sistema host: RAM y GPU VRAM.
 Lee directamente del OS — independiente del provider LLM activo.
 
 GPU: intenta nvidia-smi (NVIDIA), luego rocm-smi (AMD), luego pynvml.
-RAM: usa psutil si está instalado, fallback a /proc/meminfo en Linux.
+RAM: usa psutil (multiplataforma, en requirements), fallback a /proc/meminfo en Linux.
 """
 import asyncio
 import json
 import subprocess
+import sys
 from fastapi import APIRouter
 
 router = APIRouter(prefix="/system", tags=["system"])
+
+# En Windows, evita el parpadeo de una ventana de consola por cada subproceso
+# (nvidia-smi/rocm-smi se invocan en bucle desde el HUD).
+_NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 
 def _nvidia_smi() -> list[dict]:
@@ -23,6 +28,7 @@ def _nvidia_smi() -> list[dict]:
                 "--format=csv,noheader,nounits",
             ],
             capture_output=True, text=True, timeout=3,
+            creationflags=_NO_WINDOW,
         )
         if result.returncode != 0:
             return []
@@ -51,6 +57,7 @@ def _rocm_smi() -> list[dict]:
         result = subprocess.run(
             ["rocm-smi", "--showmeminfo", "vram", "--json"],
             capture_output=True, text=True, timeout=3,
+            creationflags=_NO_WINDOW,
         )
         if result.returncode != 0:
             return []

@@ -38,7 +38,8 @@ def _serializer(obj):
 
 def _save_char(char: Character) -> None:
     _json_path(char.id).write_text(
-        json.dumps(char.model_dump(), default=_serializer, ensure_ascii=False, indent=2)
+        json.dumps(char.model_dump(), default=_serializer, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
     _ensure_readme(char)
 
@@ -47,7 +48,7 @@ def _load_char(char_id: str) -> Character | None:
     path = _json_path(char_id)
     if not path.exists():
         return None
-    return Character.model_validate_json(path.read_text())
+    return Character.model_validate_json(path.read_text(encoding="utf-8"))
 
 def _load_all() -> list[Character]:
     # Migrar flat .json que aún no se hayan movido
@@ -62,7 +63,7 @@ def _load_all() -> list[Character]:
         if not json_file.exists():
             continue
         try:
-            results.append(Character.model_validate_json(json_file.read_text()))
+            results.append(Character.model_validate_json(json_file.read_text(encoding="utf-8")))
         except Exception:
             pass
     return results
@@ -99,10 +100,11 @@ def _migrate_if_needed(char_id: str) -> None:
         shutil.move(str(old_avatar), str(folder / "avatar.png"))
         # Asegura que avatar_path apunte al nuevo endpoint
         try:
-            char = Character.model_validate_json((folder / "character.json").read_text())
+            char = Character.model_validate_json((folder / "character.json").read_text(encoding="utf-8"))
             char.avatar_path = f"/api/v1/characters/{char_id}/avatar"
             (folder / "character.json").write_text(
-                json.dumps(char.model_dump(), default=_serializer, ensure_ascii=False, indent=2)
+                json.dumps(char.model_dump(), default=_serializer, ensure_ascii=False, indent=2),
+                encoding="utf-8",
             )
         except Exception:
             pass
@@ -125,7 +127,8 @@ def _ensure_readme(char: Character) -> None:
         "Usuarios avanzados pueden agregar aquí:\n"
         "- `lorebook.json` — world info / lorebook\n"
         "- `items/` — items del sistema de slots Waifuku\n"
-        "- `sprites/` — sprites adicionales por emoción\n"
+        "- `sprites/` — sprites adicionales por emoción\n",
+        encoding="utf-8",
     )
 
 def load_character(char_id: str) -> Character | None:

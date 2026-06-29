@@ -44,6 +44,7 @@ class Chat(BaseModel):
 
     messages: List[Message] = []
     bookmarks: List[Bookmark] = []
+    active_item_ids: List[str] = []
 
     # Metadatos libres para extensiones futuras (stats de juego, flags, etc.)
     metadata: Dict[str, Any] = {}

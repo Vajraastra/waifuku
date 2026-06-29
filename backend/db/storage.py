@@ -27,21 +27,24 @@ def _serializer(obj):
 
 def save(entity_type: str, entity_id: str, data: BaseModel) -> None:
     path = _dir(entity_type) / f"{entity_id}.json"
-    path.write_text(json.dumps(data.model_dump(), default=_serializer, ensure_ascii=False, indent=2))
+    path.write_text(
+        json.dumps(data.model_dump(), default=_serializer, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 def load(entity_type: str, entity_id: str, model: Type[T]) -> Optional[T]:
     path = _dir(entity_type) / f"{entity_id}.json"
     if not path.exists():
         return None
-    return model.model_validate_json(path.read_text())
+    return model.model_validate_json(path.read_text(encoding="utf-8"))
 
 
 def load_all(entity_type: str, model: Type[T]) -> List[T]:
     results = []
     for path in sorted(_dir(entity_type).glob("*.json")):
         try:
-            results.append(model.model_validate_json(path.read_text()))
+            results.append(model.model_validate_json(path.read_text(encoding="utf-8")))
         except Exception:
             pass
     return results

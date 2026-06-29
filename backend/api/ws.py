@@ -3,6 +3,7 @@ WebSocket endpoint para streaming de inferencia LLM en tiempo real.
 
 Protocolo cliente → servidor:
   {"type": "generate", "chat_id": "...", "content": "...", "config": {...}}
+  {"type": "regenerate", "chat_id": "...", "config": {...}}
   {"type": "ping"}
 
 Protocolo servidor → cliente:
@@ -15,9 +16,9 @@ Protocolo servidor → cliente:
 import json
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from backend.core import Chat, MessageRole
+from backend.core import Chat, MessageRole, Item
 from backend.core.persona import Persona
-from backend.db.storage import load, save
+from backend.db.storage import load, load_all, save
 from backend.inference.prompt_builder import build_messages
 from backend.inference.providers import get_provider, ProviderConfig
 from backend.inference.providers.base import THINKING_PREFIX
@@ -27,6 +28,79 @@ router = APIRouter(tags=["websocket"])
 
 async def _send(ws: WebSocket, payload: dict):
     await ws.send_text(json.dumps(payload, ensure_ascii=False))
+
+
+class _ContextError(Exception):
+    """Error de carga de contexto con mensaje listo para enviar al cliente."""
+
+
+def _load_context(chat_id: str):
+    """Carga (chat, character, persona, active_items). Lanza _ContextError si algo falta."""
+    chat = load("chats", chat_id, Chat)
+    if not chat:
+        raise _ContextError(f"Chat '{chat_id}' no encontrado")
+
+    # Character es opcional (None en modo vanilla)
+    character = None
+    if chat.character_id:
+        from backend.api.characters import load_character
+        character = load_character(chat.character_id)
+        if not character:
+            raise _ContextError("Personaje del chat no encontrado")
+
+    # Persona opcional
+    persona = None
+    if chat.persona_id:
+        persona = load("personas", chat.persona_id, Persona)
+
+    # Items activos del chat
+    active_items = []
+    if chat.active_item_ids:
+        all_items = {i.id: i for i in load_all("items", Item)}
+        active_items = [all_items[iid] for iid in chat.active_item_ids if iid in all_items]
+
+    return chat, character, persona, active_items
+
+
+def _parse_config(config_raw: dict) -> ProviderConfig:
+    """Construye un ProviderConfig desde el dict crudo del WS. Puede lanzar ValueError."""
+    return ProviderConfig(
+        provider=      config_raw.get("provider", "ollama"),
+        model=         config_raw.get("model", "llama3.2"),
+        base_url=      config_raw.get("base_url", ""),
+        api_key=       config_raw.get("api_key", ""),
+        api_base=      config_raw.get("api_base", "/v1"),
+        temperature=   float(config_raw.get("temperature", 0.8)),
+        max_tokens=    int(config_raw.get("max_tokens", 1024)),
+        top_p=         float(config_raw.get("top_p", 0.9)),
+        top_k=         int(config_raw.get("top_k", -1)),
+        repeat_penalty=float(config_raw.get("repeat_penalty", 1.0)),
+        thinking=      bool(config_raw.get("thinking", False)),
+        num_ctx=       int(config_raw.get("num_ctx", 0)),
+    )
+
+
+async def _stream_to_ws(ws: WebSocket, provider, messages) -> str:
+    """Reenvía el stream del provider al WS aplicando el protocolo thinking.
+
+    Devuelve el contenido real acumulado (sin los bloques de thinking).
+    """
+    full_response = ""
+    in_think = False
+    async for token in provider.stream(messages):
+        if token == THINKING_PREFIX:
+            if not in_think:
+                in_think = True
+                await _send(ws, {"type": "think_start"})
+            else:
+                in_think = False
+                await _send(ws, {"type": "think_end"})
+        elif in_think:
+            await _send(ws, {"type": "think_token", "content": token})
+        else:
+            full_response += token
+            await _send(ws, {"type": "token", "content": token})
+    return full_response
 
 
 @router.websocket("/ws/chat/{chat_id}")
@@ -62,82 +136,62 @@ async def chat_ws(ws: WebSocket, chat_id: str):
 
 
 async def _handle_generate(ws: WebSocket, chat_id: str, msg: dict):
-    # Cargar chat
-    chat = load("chats", chat_id, Chat)
-    if not chat:
-        await _send(ws, {"type": "error", "message": f"Chat '{chat_id}' no encontrado"})
+    try:
+        chat, character, persona, active_items = _load_context(chat_id)
+    except _ContextError as e:
+        await _send(ws, {"type": "error", "message": str(e)})
         return
 
-    # Cargar character (opcional — None en modo vanilla)
-    from backend.api.characters import load_character
-    character = None
-    if chat.character_id:
-        character = load_character(chat.character_id)
-        if not character:
-            await _send(ws, {"type": "error", "message": "Personaje del chat no encontrado"})
-            return
-
-    # Cargar persona (opcional)
-    persona = None
-    if chat.persona_id:
-        persona = load("personas", chat.persona_id, Persona)
-
-    # Guardar mensaje del usuario
     user_content = msg.get("content", "").strip()
     if not user_content:
         await _send(ws, {"type": "error", "message": "El mensaje no puede estar vacío"})
         return
 
+    config_raw   = msg.get("config", {})
+    helper_mode  = bool(config_raw.get("helper_mode", False))
+    active_tools = config_raw.get("active_tools", [])   # lista de tool IDs activos
+
+    # Guardar el mensaje del usuario y persistir de inmediato: si la inferencia
+    # falla después, el mensaje no se pierde al recargar el chat.
     user_msg = chat.add_message(MessageRole.user, user_content)
+    save("chats", chat_id, chat)
     await _send(ws, {"type": "user_message", "message_id": user_msg.id, "content": user_content})
 
-    # Construir prompt
-    messages = build_messages(character, persona, chat)
+    # Interceptor agéntico: detecta triggers y corre las herramientas antes del LLM
+    agent_context = ""
+    if helper_mode and active_tools:
+        from backend.agents import trigger_router, executor
+        matched = trigger_router.match(user_content, active_tools)
+        for tool_name in matched:
+            tool_params = config_raw.get("tool_params", {}).get(tool_name, {})
 
-    # Configurar provider
-    config_raw = msg.get("config", {})
+            async def _ws_send(payload: dict):
+                await _send(ws, payload)
+
+            result = await executor.run(tool_name, user_content, tool_params, _ws_send)
+            if result and result.summary:
+                agent_context += f"\n\n{result.summary}"
+
+    # Construir prompt (con items activos, slots resueltos y contexto agéntico)
+    messages = build_messages(
+        character, persona, chat,
+        active_items=active_items,
+        helper_mode=helper_mode,
+        agent_context=agent_context,
+    )
+
     try:
-        config = ProviderConfig(
-            provider=      config_raw.get("provider", "ollama"),
-            model=         config_raw.get("model", "llama3.2"),
-            base_url=      config_raw.get("base_url", ""),
-            api_key=       config_raw.get("api_key", ""),
-            api_base=      config_raw.get("api_base", "/v1"),
-            temperature=   float(config_raw.get("temperature", 0.8)),
-            max_tokens=    int(config_raw.get("max_tokens", 1024)),
-            top_p=         float(config_raw.get("top_p", 0.9)),
-            top_k=         int(config_raw.get("top_k", -1)),
-            repeat_penalty=float(config_raw.get("repeat_penalty", 1.0)),
-            thinking=      bool(config_raw.get("thinking", False)),
-            num_ctx=       int(config_raw.get("num_ctx", 0)),
-        )
-        provider = get_provider(config)
+        provider = get_provider(_parse_config(config_raw))
     except ValueError as e:
         await _send(ws, {"type": "error", "message": str(e)})
         return
 
-    # Streaming — thinking tokens van como think_token, respuesta real como token
-    full_response = ""
-    in_think = False
     try:
-        async for token in provider.stream(messages):
-            if token == THINKING_PREFIX:
-                if not in_think:
-                    in_think = True
-                    await _send(ws, {"type": "think_start"})
-                else:
-                    in_think = False
-                    await _send(ws, {"type": "think_end"})
-            elif in_think:
-                await _send(ws, {"type": "think_token", "content": token})
-            else:
-                full_response += token
-                await _send(ws, {"type": "token", "content": token})
+        full_response = await _stream_to_ws(ws, provider, messages)
     except Exception as e:
         await _send(ws, {"type": "error", "message": f"Error de inferencia: {e}"})
         return
 
-    # Guardar respuesta del asistente
     assistant_msg = chat.add_message(MessageRole.assistant, full_response)
     save("chats", chat_id, chat)
 
@@ -150,69 +204,35 @@ async def _handle_generate(ws: WebSocket, chat_id: str, msg: dict):
 
 async def _handle_regenerate(ws: WebSocket, chat_id: str, msg: dict):
     """Regenera la última respuesta del asistente sin guardar un nuevo mensaje de usuario."""
-    chat = load("chats", chat_id, Chat)
-    if not chat:
-        await _send(ws, {"type": "error", "message": f"Chat '{chat_id}' no encontrado"})
+    try:
+        chat, character, persona, active_items = _load_context(chat_id)
+    except _ContextError as e:
+        await _send(ws, {"type": "error", "message": str(e)})
         return
 
-    # Encontrar el último mensaje de usuario como contenido de contexto
+    # Debe existir al menos un mensaje de usuario para regenerar
     last_user = next((m for m in reversed(chat.messages) if m.role == MessageRole.user), None)
     if not last_user:
         await _send(ws, {"type": "error", "message": "No hay mensaje de usuario para regenerar"})
         return
 
-    from backend.api.characters import load_character
-    character = None
-    if chat.character_id:
-        character = load_character(chat.character_id)
-        if not character:
-            await _send(ws, {"type": "error", "message": "Personaje del chat no encontrado"})
-            return
+    config_raw  = msg.get("config", {})
+    helper_mode = bool(config_raw.get("helper_mode", False))
 
-    persona = None
-    if chat.persona_id:
-        from backend.core.persona import Persona
-        persona = load("personas", chat.persona_id, Persona)
+    messages = build_messages(
+        character, persona, chat,
+        active_items=active_items,
+        helper_mode=helper_mode,
+    )
 
-    messages = build_messages(character, persona, chat)
-
-    config_raw = msg.get("config", {})
     try:
-        config = ProviderConfig(
-            provider=      config_raw.get("provider", "ollama"),
-            model=         config_raw.get("model", "llama3.2"),
-            base_url=      config_raw.get("base_url", ""),
-            api_key=       config_raw.get("api_key", ""),
-            api_base=      config_raw.get("api_base", "/v1"),
-            temperature=   float(config_raw.get("temperature", 0.8)),
-            max_tokens=    int(config_raw.get("max_tokens", 1024)),
-            top_p=         float(config_raw.get("top_p", 0.9)),
-            top_k=         int(config_raw.get("top_k", -1)),
-            repeat_penalty=float(config_raw.get("repeat_penalty", 1.0)),
-            thinking=      bool(config_raw.get("thinking", False)),
-            num_ctx=       int(config_raw.get("num_ctx", 0)),
-        )
-        provider = get_provider(config)
+        provider = get_provider(_parse_config(config_raw))
     except ValueError as e:
         await _send(ws, {"type": "error", "message": str(e)})
         return
 
-    full_response = ""
-    in_think = False
     try:
-        async for token in provider.stream(messages):
-            if token == THINKING_PREFIX:
-                if not in_think:
-                    in_think = True
-                    await _send(ws, {"type": "think_start"})
-                else:
-                    in_think = False
-                    await _send(ws, {"type": "think_end"})
-            elif in_think:
-                await _send(ws, {"type": "think_token", "content": token})
-            else:
-                full_response += token
-                await _send(ws, {"type": "token", "content": token})
+        full_response = await _stream_to_ws(ws, provider, messages)
     except Exception as e:
         await _send(ws, {"type": "error", "message": f"Error de inferencia: {e}"})
         return

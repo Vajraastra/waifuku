@@ -7,13 +7,12 @@ import { useProviderStatus } from '../hooks/useProviderStatus'
 import { THEME_LIST, THEMES, DEFAULT_THEME } from '../lib/themes'
 import { pageIn } from '../lib/animations'
 
-const NAV_TABS = [
-  { to: '/vanilla', key: 'vanilla' },
-]
+const NAV_TABS = []
 
 const MGMT_TABS = [
   { to: '/characters', key: 'characters' },
   { to: '/personas',   key: 'personas'   },
+  { to: '/items',      key: 'items'      },
   { to: '/models',     key: 'server'     },
   { to: '/settings',   key: 'settings'   },
 ]
@@ -178,7 +177,7 @@ function ProviderDot({ status, provider }) {
 
   return (
     <div
-      title={`${provider} · ${STATUS_LABEL[status] ?? ''}`}
+      title={status === 'online' ? `${provider} · ${STATUS_LABEL[status]}` : (STATUS_LABEL[status] ?? '')}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -209,15 +208,17 @@ function ProviderDot({ status, provider }) {
         flexShrink: 0,
       }} />
 
-      {/* Proveedor */}
-      <span style={{
-        fontSize: '0.72rem',
-        fontFamily: 'var(--font-ui)',
-        color: 'var(--color-text-2)',
-        letterSpacing: '0.5px',
-      }}>
-        {provider}
-      </span>
+      {/* Proveedor — solo cuando hay conexión real; offline no nombra ningún server */}
+      {status === 'online' && (
+        <span style={{
+          fontSize: '0.72rem',
+          fontFamily: 'var(--font-ui)',
+          color: 'var(--color-text-2)',
+          letterSpacing: '0.5px',
+        }}>
+          {provider}
+        </span>
+      )}
 
       {/* Estado */}
       <span style={{

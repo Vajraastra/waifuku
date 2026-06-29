@@ -7,6 +7,7 @@ from backend.db.storage import save, load, load_all, delete, exists
 from backend.api.schemas import (
     ChatCreate, BookmarkCreate, MessageUpdate,
     ChatSummary, ChatResponse, MessageResponse,
+    ActiveItemsUpdate,
 )
 
 router = APIRouter(prefix="/chats", tags=["chats"])
@@ -44,6 +45,7 @@ def _to_response(chat: Chat) -> ChatResponse:
         messages=[_msg_to_response(m) for m in chat.messages],
         bookmarks=[b.model_dump() for b in chat.bookmarks],
         metadata=chat.metadata,
+        active_item_ids=chat.active_item_ids,
         created_at=chat.created_at,
         updated_at=chat.updated_at,
     )
@@ -127,6 +129,19 @@ async def delete_message(chat_id: str, message_id: str):
     save(ENTITY, chat_id, chat)
 
 
+
+
+# ── Items activos ─────────────────────────────────────────────────────────────
+
+@router.patch("/{chat_id}/active-items", response_model=ChatResponse)
+async def set_active_items(chat_id: str, body: ActiveItemsUpdate):
+    chat = load(ENTITY, chat_id, Chat)
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat no encontrado")
+    chat.active_item_ids = body.item_ids
+    chat.updated_at = datetime.now(timezone.utc)
+    save(ENTITY, chat_id, chat)
+    return _to_response(chat)
 
 
 # ── Bookmarks ─────────────────────────────────────────────────────────────────

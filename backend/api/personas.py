@@ -1,13 +1,21 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, UploadFile, File, status
+from fastapi.responses import FileResponse
 from datetime import datetime, timezone
+from pathlib import Path
 
 from backend.core import Persona
-from backend.db.storage import save, load, load_all, delete, exists
+from backend.db.storage import save, load, load_all, delete, exists, DATA_ROOT
 from backend.api.schemas import PersonaCreate, PersonaUpdate, PersonaResponse
 
 router = APIRouter(prefix="/personas", tags=["personas"])
 
-ENTITY = "personas"
+ENTITY      = "personas"
+PERSONAS_DIR = DATA_ROOT / "personas"
+PERSONAS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _avatar_path(persona_id: str) -> Path:
+    return PERSONAS_DIR / f"{persona_id}.png"
 
 
 def _to_response(p: Persona) -> PersonaResponse:
@@ -73,6 +81,27 @@ async def set_default_persona(persona_id: str):
         raise HTTPException(status_code=404, detail="Persona no encontrada")
     _clear_default(exclude_id=persona_id)
     p.is_default = True
+    p.updated_at = datetime.now(timezone.utc)
+    save(ENTITY, persona_id, p)
+    return _to_response(p)
+
+
+@router.get("/{persona_id}/avatar")
+async def get_persona_avatar(persona_id: str):
+    path = _avatar_path(persona_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Sin avatar")
+    return FileResponse(path, media_type="image/png")
+
+
+@router.post("/{persona_id}/avatar", response_model=PersonaResponse)
+async def upload_persona_avatar(persona_id: str, file: UploadFile = File(...)):
+    p = load(ENTITY, persona_id, Persona)
+    if not p:
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+    data = await file.read()
+    _avatar_path(persona_id).write_bytes(data)
+    p.avatar_path = f"/api/v1/personas/{persona_id}/avatar"
     p.updated_at = datetime.now(timezone.utc)
     save(ENTITY, persona_id, p)
     return _to_response(p)

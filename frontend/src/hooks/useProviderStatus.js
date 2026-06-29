@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useConfigStore } from '../store/configStore'
 import { api } from '../lib/api'
 import { SERVER_PROFILES, getProfileById } from '../lib/serverProfiles'
@@ -46,17 +46,26 @@ export function useProviderStatus(intervalMs = 8_000) {
 
   const [status, setStatus] = useState('checking')
 
+  // Token incremental: solo el chequeo más reciente puede escribir el estado.
+  // Evita que un chequeo viejo (p. ej. el de la config default 'ollama' antes de
+  // rehidratar LM Studio) resuelva tarde y pise un resultado nuevo 'online'.
+  const reqIdRef = useRef(0)
+
   const check = useCallback(async () => {
+    const myId = ++reqIdRef.current
     try {
       const data = await api.models.list({ provider, baseUrl, apiBase, apiKey })
+      if (myId !== reqIdRef.current) return   // chequeo obsoleto → ignorar
       setStatus(data?.error ? 'offline' : 'online')
     } catch {
+      if (myId !== reqIdRef.current) return
       setStatus('offline')
     }
   }, [provider, baseUrl, apiBase, apiKey])
 
   useEffect(() => {
-    setStatus('checking')
+    // No reseteamos a 'checking' en cada cambio de config: mantenemos el último
+    // estado conocido hasta que el nuevo chequeo resuelva, para no parpadear.
     check()
     const id = setInterval(check, intervalMs)
     return () => clearInterval(id)

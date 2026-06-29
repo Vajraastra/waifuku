@@ -1,4 +1,7 @@
 venv/
+# Runtimes portables autocontenidos (se descargan al primer arranque; carpeta regenerable)
+runtime/
+requirements.txt.bak
 CLAUDE.md
 TASKS.md
 BITACORA.md
@@ -14,6 +17,11 @@ dist/
 build/
 .DS_Store
 *.log
+
+# Artefactos de build/release (regenerables con scripts/build_windows_release.sh)
+release-windows/
+*.zip
+*.db
 
 # Datos privados de usuario
 data/chats/

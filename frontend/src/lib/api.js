@@ -48,12 +48,19 @@ export const api = {
 
   // Personas
   personas: {
-    list: ()           => request('GET',    '/personas/'),
-    get:  (id)         => request('GET',    `/personas/${id}`),
-    create: (data)     => request('POST',   '/personas/', data),
-    update: (id, data) => request('PATCH',  `/personas/${id}`, data),
-    delete: (id)       => request('DELETE', `/personas/${id}`),
-    setDefault: (id)   => request('POST',   `/personas/${id}/set-default`),
+    avatarUrl: (id)     => `${BASE}/api/v1/personas/${id}/avatar`,
+    list: ()            => request('GET',    '/personas/'),
+    get:  (id)          => request('GET',    `/personas/${id}`),
+    create: (data)      => request('POST',   '/personas/', data),
+    update: (id, data)  => request('PATCH',  `/personas/${id}`, data),
+    delete: (id)        => request('DELETE', `/personas/${id}`),
+    setDefault: (id)    => request('POST',   `/personas/${id}/set-default`),
+    uploadAvatar: (id, file) => {
+      const form = new FormData()
+      form.append('file', file)
+      return fetch(`${BASE}/api/v1/personas/${id}/avatar`, { method: 'POST', body: form })
+        .then(r => r.json())
+    },
   },
 
   // Models
@@ -145,5 +152,15 @@ export const api = {
       request('DELETE', `/chats/${chatId}/messages/${msgId}`),
     addBookmark: (id, data)              => request('POST',   `/chats/${id}/bookmarks`, data),
     deleteBookmark: (chatId, bookmarkId) => request('DELETE', `/chats/${chatId}/bookmarks/${bookmarkId}`),
+    setActiveItems: (chatId, itemIds)    => request('PATCH',  `/chats/${chatId}/active-items`, { item_ids: itemIds }),
+  },
+
+  // Items
+  items: {
+    list:   ()           => request('GET',    '/items/'),
+    get:    (id)         => request('GET',    `/items/${id}`),
+    create: (data)       => request('POST',   '/items/', data),
+    update: (id, data)   => request('PATCH',  `/items/${id}`, data),
+    delete: (id)         => request('DELETE', `/items/${id}`),
   },
 }

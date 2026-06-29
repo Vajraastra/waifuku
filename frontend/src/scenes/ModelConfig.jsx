@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useConfigStore } from '../store/configStore'
 import { useProviderStatus } from '../hooks/useProviderStatus'
 import { useThemeStore } from '../store/themeStore'
@@ -556,16 +557,13 @@ const STATUS_COLOR = {
   offline:  '#ef4444',
   checking: 'var(--color-text-muted)',
 }
-const STATUS_LABEL = {
-  online:   'online',
-  offline:  'offline',
-  checking: 'comprobando…',
-}
 
 function StatusRow({ status, provider }) {
+  const { t } = useTranslation()
   const color   = STATUS_COLOR[status] ?? STATUS_COLOR.checking
   const profile = getProfileById(provider)
-  const label   = profile ? profile.name : (provider || 'Servidor')
+  const label   = profile ? profile.name : (provider || t('server.server_default'))
+  const statusLabel = status ? (t(`server.status_${status}`, { defaultValue: '…' })) : '…'
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
       <div style={{
@@ -573,7 +571,7 @@ function StatusRow({ status, provider }) {
         ...(status === 'online' ? { boxShadow: `0 0 6px ${color}` } : {}),
       }} />
       <span style={{ fontSize: '0.8rem', color: 'var(--color-text-2)' }}>
-        {label} · {STATUS_LABEL[status] ?? '…'}
+        {status === 'online' ? `${label} · ${statusLabel}` : statusLabel}
       </span>
     </div>
   )
@@ -602,8 +600,9 @@ function PsModelRow({ model }) {
 }
 
 function DiscoveryPanel({ currentUrl, onConnect }) {
+  const { t } = useTranslation()
   const [scanning, setScanning] = useState(false)
-  const [servers,  setServers]  = useState(null) // null = nunca escaneado
+  const [servers,  setServers]  = useState(null)
 
   async function scan() {
     setScanning(true)
@@ -620,33 +619,32 @@ function DiscoveryPanel({ currentUrl, onConnect }) {
   return (
     <div style={S.card}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={S.cardTitle}>Descubrimiento local</div>
+        <div style={S.cardTitle}>{t('server.card_discovery')}</div>
         <button style={S.fetchBtn(scanning)} onClick={scan} disabled={scanning}>
-          {scanning ? 'Escaneando…' : '⬡ Escanear red local'}
+          {scanning ? t('server.btn_scanning') : t('server.btn_scan')}
         </button>
       </div>
 
       <span style={{ fontSize: '0.77rem', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
-        Detecta automáticamente servidores LLM corriendo en tu máquina (Ollama, LM Studio, Jan, llama.cpp, etc.).
-        Con un clic puedes conectarte al servidor encontrado.
+        {t('server.discovery_desc')}
       </span>
 
       {servers === null && (
         <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-          Presiona "Escanear" para buscar servidores en los puertos estándar.
+          {t('server.discovery_prompt')}
         </span>
       )}
 
       {servers !== null && servers.length === 0 && (
         <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
-          No se encontraron servidores. Asegúrate de que Ollama u otro servidor esté corriendo.
+          {t('server.discovery_none')}
         </span>
       )}
 
       {servers !== null && servers.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
-            {servers.length} servidor{servers.length > 1 ? 'es' : ''} encontrado{servers.length > 1 ? 's' : ''}:
+            {t(servers.length === 1 ? 'server.discovery_found_one' : 'server.discovery_found_other', { count: servers.length })}
           </span>
           {servers.map(srv => {
             const connected = currentUrl === srv.url
@@ -665,7 +663,7 @@ function DiscoveryPanel({ currentUrl, onConnect }) {
                     onClick={() => !connected && onConnect(srv)}
                     disabled={connected}
                   >
-                    {connected ? '✓ Conectado' : 'Conectar'}
+                    {connected ? t('server.btn_connected') : t('server.btn_connect')}
                   </button>
                 </div>
                 {srv.models?.length > 0 && (
@@ -685,11 +683,12 @@ function DiscoveryPanel({ currentUrl, onConnect }) {
 
 /* ── Componente principal ─────────────────────────────────────────────────── */
 export function ModelConfig() {
+  const { t } = useTranslation()
   const cfg = useConfigStore()
   const { themeId } = useThemeStore()
   const tabRef = useRef(null)
 
-  const [tab, setTab] = useState('server') // 'server' | 'model'
+  const [tab, setTab] = useState('server')
 
   useEffect(() => {
     const anim = (THEMES[themeId] ?? THEMES[DEFAULT_THEME]).anim
@@ -734,7 +733,7 @@ export function ModelConfig() {
       })
       setPsData(res)
     } catch {
-      setPsData({ models: [], error: 'Error al consultar' })
+      setPsData({ models: [], error: t('server.err_ps') })
     } finally {
       setPsLoading(false)
     }
@@ -794,6 +793,14 @@ export function ModelConfig() {
       baseUrl:         profile.defaultHost,
       apiBase:         profile.apiBase,
     }))
+    // Aplicar la selección de servidor al store global de inmediato, igual que al
+    // conectar desde autodescubrir: el indicador de estado refleja el servidor elegido.
+    cfg.setConfig({
+      serverProfileId: profile.id,
+      provider:        profile.type,
+      baseUrl:         profile.defaultHost,
+      apiBase:         profile.apiBase,
+    })
     setAvailableModels([])
     setModelError(null)
     setActivePreset(null)
@@ -803,14 +810,28 @@ export function ModelConfig() {
   // Conectar desde discovery: asigna el perfil correcto automáticamente
   function handleDiscoveryConnect(srv) {
     const profile = profileFromDiscovery(srv)
+    const models  = srv.models ?? []
+    // Si el modelo actual no existe en este servidor, adoptar el primero disponible
+    // (el default 'llama3.2' de Ollama no existe en LM Studio, etc.)
+    const nextModel = models.includes(form.model) ? form.model : (models[0] ?? form.model)
     setForm(f => ({
       ...f,
       serverProfileId: profile.id,
       provider:        profile.type,
       baseUrl:         srv.url,
       apiBase:         profile.apiBase,
+      model:           nextModel,
     }))
-    setAvailableModels(srv.models ?? [])
+    // Aplicar la conexión al store global de inmediato (sin esperar a "Guardar"):
+    // así el indicador de estado y el chat usan el servidor recién conectado.
+    cfg.setConfig({
+      serverProfileId: profile.id,
+      provider:        profile.type,
+      baseUrl:         srv.url,
+      apiBase:         profile.apiBase,
+      model:           nextModel,
+    })
+    setAvailableModels(models)
     setModelError(null)
     setActivePreset(null)
     setSaved(false)
@@ -906,8 +927,8 @@ export function ModelConfig() {
       if (res.ok) {
         const mb  = (res.freed_bytes / 1024 / 1024).toFixed(1)
         const msg = res.deleted === 0
-          ? 'No hay blobs huérfanos'
-          : `${res.deleted} blob${res.deleted > 1 ? 's' : ''} eliminado${res.deleted > 1 ? 's' : ''} · ${mb} MB liberados`
+          ? t('server.purge_none')
+          : t('server.purge_freed', { count: res.deleted, mb })
         setPurgeResult({ ok: true, message: msg })
       } else {
         setPurgeResult({ ok: false, message: res.error })
@@ -947,10 +968,10 @@ export function ModelConfig() {
       {/* ── Tabs ─────────────────────────────────────────────────────────── */}
       <div style={S.tabBar}>
         <button style={S.tabBtn(tab === 'server')} onClick={() => setTab('server')}>
-          Servidor
+          {t('server.tab_server')}
         </button>
         <button style={S.tabBtn(tab === 'model')} onClick={() => setTab('model')}>
-          Modelo
+          {t('server.tab_model')}
         </button>
       </div>
 
@@ -963,9 +984,9 @@ export function ModelConfig() {
 
             {/* Selector de perfil */}
             <div data-entry style={S.card}>
-              <div style={S.cardTitle}>Servidor LLM</div>
+              <div style={S.cardTitle}>{t('server.card_llm_server')}</div>
               <span style={{ fontSize: '0.77rem', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
-                Selecciona el servidor activo. Cada perfil usa los endpoints correctos automáticamente.
+                {t('server.card_llm_desc')}
               </span>
               <div style={S.profileGrid}>
                 {SERVER_PROFILES.map(profile => {
@@ -987,10 +1008,10 @@ export function ModelConfig() {
 
             {/* Conexión */}
             <div data-entry style={S.card}>
-              <div style={S.cardTitle}>Conexión</div>
+              <div style={S.cardTitle}>{t('server.card_connection')}</div>
 
               <div style={S.row}>
-                <label style={S.label}>Host</label>
+                <label style={S.label}>{t('server.label_host')}</label>
                 <input
                   style={S.input} type="text"
                   value={form.baseUrl}
@@ -1001,7 +1022,7 @@ export function ModelConfig() {
 
               {form.provider !== 'ollama' && (
                 <div style={S.row}>
-                  <label style={S.label}>Prefijo API</label>
+                  <label style={S.label}>{t('server.label_api_prefix')}</label>
                   <div style={S.apiBaseRow}>
                     <span style={S.apiBaseLabel}>{form.baseUrl || 'http://host'}</span>
                     <input
@@ -1012,7 +1033,7 @@ export function ModelConfig() {
                     />
                   </div>
                   <span style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', marginTop: '0.2rem' }}>
-                    URL completa de inferencia: <code style={{ fontFamily: 'monospace' }}>
+                    {t('server.label_full_url')} <code style={{ fontFamily: 'monospace' }}>
                       {(form.baseUrl || 'http://host').replace(/\/$/, '')}{form.apiBase || '/v1'}/chat/completions
                     </code>
                   </span>
@@ -1021,8 +1042,8 @@ export function ModelConfig() {
 
               {form.provider !== 'ollama' && (
                 <div style={S.row}>
-                  <label style={S.label}>API Key</label>
-                  <input style={S.input} type="password" value={form.apiKey} placeholder="sk-… (opcional para servidores locales)"
+                  <label style={S.label}>{t('server.label_api_key')}</label>
+                  <input style={S.input} type="password" value={form.apiKey} placeholder={t('server.placeholder_api_key')}
                     onChange={e => setField('apiKey', e.target.value)} />
                 </div>
               )}
@@ -1031,26 +1052,26 @@ export function ModelConfig() {
             {/* Estado del servicio */}
             <div data-entry style={S.card}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={S.cardTitle}>Estado del servicio</div>
+                <div style={S.cardTitle}>{t('server.card_status')}</div>
                 <button
                   style={S.refreshBtn}
                   disabled={psLoading}
                   onClick={() => { refreshStatus(); fetchPs() }}
                 >
-                  {psLoading ? '…' : '↻ Actualizar'}
+                  {psLoading ? '…' : t('server.btn_refresh')}
                 </button>
               </div>
 
               <StatusRow status={providerStatus} provider={form.serverProfileId} />
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                <span style={S.label}>Modelos en memoria</span>
+                <span style={S.label}>{t('server.label_models_in_mem')}</span>
                 {psData?.error && <span style={S.errorMsg}>{psData.error}</span>}
                 {psData && !psData.error && psData.models?.length === 0 && (
                   <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                     {form.provider === 'ollama'
-                      ? 'Ningún modelo cargado en VRAM (se carga al primer mensaje)'
-                      : 'Sin modelos activos reportados'}
+                      ? t('server.no_model_ollama')
+                      : t('server.no_model_generic')}
                   </span>
                 )}
                 {psData?.models?.map(m => <PsModelRow key={m.name} model={m} />)}
@@ -1075,16 +1096,16 @@ export function ModelConfig() {
 
               {/* Modelo */}
               <div data-entry style={S.card}>
-                <div style={S.cardTitle}>Modelo</div>
+                <div style={S.cardTitle}>{t('server.card_model')}</div>
 
                 <div style={S.activeModelBadge}>
-                  <span style={S.activeModelLabel}>Modelo activo</span>
+                  <span style={S.activeModelLabel}>{t('server.label_active_model')}</span>
                   <span style={S.activeModelName}>{cfg.model || '—'}</span>
                 </div>
 
                 <div style={S.row}>
                   <div style={S.labelRow}>
-                    <label style={S.label}>Seleccionar modelo</label>
+                    <label style={S.label}>{t('server.label_select_model')}</label>
                     {modelError && <span style={S.errorMsg}>{modelError}</span>}
                   </div>
                   <div style={S.modelRow}>
@@ -1097,10 +1118,10 @@ export function ModelConfig() {
                         onChange={e => setField('model', e.target.value)} />
                     )}
                     <button style={S.fetchBtn(loadingModels)} onClick={fetchModels} disabled={loadingModels}>
-                      {loadingModels ? '...' : 'Ver lista'}
+                      {loadingModels ? '...' : t('server.btn_list')}
                     </button>
                     <button style={S.testBtn(testing)} onClick={testModel} disabled={testing || !form.model}>
-                      {testing ? '...' : 'Probar'}
+                      {testing ? '...' : t('server.btn_test')}
                     </button>
                   </div>
 
@@ -1110,16 +1131,16 @@ export function ModelConfig() {
                       onClick={selectModel}
                       disabled={!form.model || form.model === cfg.model}
                     >
-                      Seleccionar modelo
+                      {t('server.btn_select_model')}
                     </button>
                     {modelSaved && (
                       <span style={{ fontSize: '0.72rem', color: 'var(--color-green, #86efac)' }}>
-                        ✓ Modelo seleccionado
+                        {t('server.model_selected')}
                       </span>
                     )}
                     {form.model && form.model !== cfg.model && !modelSaved && (
                       <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
-                        (sin guardar)
+                        {t('server.model_unsaved')}
                       </span>
                     )}
                   </div>
@@ -1133,9 +1154,9 @@ export function ModelConfig() {
                   {form.provider === 'ollama' && form.model && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.15rem' }}>
                       {uninstallStep === 'confirm'
-                        ? <button style={S.confirmBtn} onClick={handleUninstall}>¿Confirmar?</button>
+                        ? <button style={S.confirmBtn} onClick={handleUninstall}>{t('server.btn_uninstall_confirm')}</button>
                         : <button style={S.dangerBtn(uninstallStep === 'loading')} onClick={handleUninstall} disabled={uninstallStep === 'loading'}>
-                            {uninstallStep === 'loading' ? '...' : 'Desinstalar'}
+                            {uninstallStep === 'loading' ? '...' : t('server.btn_uninstall')}
                           </button>
                       }
                       {uninstallResult && (
@@ -1152,7 +1173,7 @@ export function ModelConfig() {
                     <div style={S.toggleLabel}>
                       <span style={S.toggleTitle}>Thinking mode</span>
                       <span style={S.toggleDesc}>
-                        {form.thinking ? 'Activado — razonamiento interno visible' : 'Desactivado — respuesta directa'}
+                        {form.thinking ? t('server.thinking_on') : t('server.thinking_off')}
                       </span>
                     </div>
                     <button style={S.toggle(form.thinking)} onClick={() => setField('thinking', !form.thinking)}>
@@ -1163,7 +1184,7 @@ export function ModelConfig() {
 
                 {modelHint && (
                   <div style={S.hint}>
-                    <span style={S.hintLabel}>{modelHint.label} — config sugerida</span>
+                    <span style={S.hintLabel}>{t('server.hint_suggested', { label: modelHint.label })}</span>
                     <span style={S.hintNote}>{modelHint.note}</span>
                     <span style={S.hintVals}>
                       temp {modelHint.temperature.toFixed(2)} · top_p {modelHint.topP.toFixed(2)}
@@ -1171,7 +1192,7 @@ export function ModelConfig() {
                       {modelHint.repeatPenalty !== 1.0 ? ` · rep ${modelHint.repeatPenalty}` : ''}
                     </span>
                     <button style={S.hintApply} onClick={() => applyHint(modelHint)}>
-                      Aplicar sugerencia
+                      {t('server.btn_apply_hint')}
                     </button>
                   </div>
                 )}
@@ -1179,7 +1200,7 @@ export function ModelConfig() {
 
               {template && (
                 <div style={S.card}>
-                  <div style={S.cardTitle}>Chat Template</div>
+                  <div style={S.cardTitle}>{t('server.card_template')}</div>
                   <div style={S.templateBadge}>
                     <span style={S.templateName}>{template.label}</span>
                     <code style={S.templateExample}>{template.example}</code>
@@ -1194,7 +1215,7 @@ export function ModelConfig() {
             <div style={S.col}>
 
               <div data-entry style={S.card}>
-                <div style={S.cardTitle}>Presets de inferencia</div>
+                <div style={S.cardTitle}>{t('server.card_presets')}</div>
                 <div style={S.presetGrid}>
                   {PRESETS.map(p => (
                     <button key={p.id} style={S.presetBtn(activePreset === p.id)} onClick={() => applyPreset(p)}>
@@ -1207,7 +1228,7 @@ export function ModelConfig() {
               </div>
 
               <div data-entry style={S.card}>
-                <div style={S.cardTitle}>Parámetros</div>
+                <div style={S.cardTitle}>{t('server.card_params')}</div>
 
                 <div style={S.row}>
                   <label style={S.label}>Temperature</label>
@@ -1231,7 +1252,7 @@ export function ModelConfig() {
                   <div style={S.labelRow}>
                     <label style={S.label}>Top K</label>
                     <span style={{ fontSize: '0.7rem', color: 'var(--color-text-faint)' }}>
-                      {parseInt(form.topK) < 0 ? 'auto (default modelo)' : ''}
+                      {parseInt(form.topK) < 0 ? t('server.topk_auto') : ''}
                     </span>
                   </div>
                   <div style={S.sliderRow}>
@@ -1262,40 +1283,39 @@ export function ModelConfig() {
 
               {form.provider === 'ollama' && (
                 <div style={S.card}>
-                  <div style={S.cardTitle}>Instalar modelo</div>
+                  <div style={S.cardTitle}>{t('server.card_install')}</div>
                   <span style={{ fontSize: '0.77rem', color: 'var(--color-text-muted)', lineHeight: 1.6 }}>
-                    Instala modelos directamente desde la terminal y luego recarga la lista.
+                    {t('server.install_desc')}
                   </span>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Desde Ollama registry o HuggingFace:</span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>{t('server.install_from_registry')}</span>
                     <code style={S.codeBlock}>ollama pull nombre-modelo:tag</code>
-                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: '0.4rem' }}>Desde archivo GGUF local:</span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: '0.4rem' }}>{t('server.install_from_gguf')}</span>
                     <code style={S.codeBlock}>{'ollama create mi-modelo -f - <<\'EOF\'\nFROM /ruta/al/modelo.gguf\nEOF'}</code>
-                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: '0.4rem' }}>Clonar modelo existente:</span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: '0.4rem' }}>{t('server.install_clone')}</span>
                     <code style={S.codeBlock}>ollama cp modelo-origen mi-modelo:latest</code>
                   </div>
                   <button style={S.refreshBtnLarge} onClick={fetchModels} disabled={loadingModels}>
-                    {loadingModels ? 'Recargando…' : 'Recargar lista de modelos'}
+                    {loadingModels ? t('server.btn_reloading') : t('server.btn_reload')}
                   </button>
                 </div>
               )}
 
               {form.provider === 'ollama' && (
                 <div style={S.card}>
-                  <div style={S.cardTitle}>Mantenimiento de caché</div>
+                  <div style={S.cardTitle}>{t('server.card_cache')}</div>
                   <span style={{ fontSize: '0.77rem', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
-                    Elimina blobs huérfanos — archivos que quedaron en disco después de reinstalaciones
-                    fallidas. Útil cuando un modelo persiste corrompido aunque se reinstale.
+                    {t('server.cache_desc')}
                   </span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     {purgeStep === 'confirm'
-                      ? <button style={S.confirmBtn} onClick={handlePurge}>¿Confirmar purga?</button>
+                      ? <button style={S.confirmBtn} onClick={handlePurge}>{t('server.btn_purge_confirm')}</button>
                       : <button
                           style={S.dangerBtn(purgeStep === 'loading')}
                           onClick={handlePurge}
                           disabled={purgeStep === 'loading'}
                         >
-                          {purgeStep === 'loading' ? 'Purgando…' : 'Purgar blobs huérfanos'}
+                          {purgeStep === 'loading' ? t('server.btn_purging') : t('server.btn_purge')}
                         </button>
                     }
                     {purgeResult && (
@@ -1314,8 +1334,8 @@ export function ModelConfig() {
 
       {/* ── Footer siempre visible ──────────────────────────────────────── */}
       <div style={S.footer}>
-        <button style={S.btnSave} onClick={handleSave}>Guardar</button>
-        {saved && <span style={S.savedMsg}>Configuración guardada</span>}
+        <button style={S.btnSave} onClick={handleSave}>{t('server.btn_save')}</button>
+        {saved && <span style={S.savedMsg}>{t('server.saved_msg')}</span>}
       </div>
 
     </div>

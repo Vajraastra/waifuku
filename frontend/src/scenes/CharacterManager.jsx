@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { gsap } from 'gsap'
 import { useTranslation } from 'react-i18next'
 import { api } from '../lib/api'
@@ -629,8 +629,10 @@ function ExpandedCard({ char, onSelect, onCancel }) {
 
 /* ── Componente principal ─────────────────────────────────────────────────── */
 export function CharacterManager() {
-  const navigate         = useNavigate()
-  const { t }            = useTranslation()
+  const navigate           = useNavigate()
+  const [searchParams]     = useSearchParams()
+  const mode               = searchParams.get('mode')   // 'helper' | null
+  const { t }              = useTranslation()
   const activeCharId       = useConfigStore(s => s.activeCharacterId)
   const setActiveCharacter = useConfigStore(s => s.setActiveCharacter)
   const importPngRef     = useRef(null)
@@ -707,15 +709,20 @@ export function CharacterManager() {
     setExpanded(null)
     setActiveCharacter(char.id)
     try {
-      const existing = await api.chats.list(char.id)
-      if (Array.isArray(existing) && existing.length > 0) {
-        navigate(`/chat/${existing[0].id}`)
+      if (mode === 'helper') {
+        const chat = await api.chats.create({ character_id: char.id, title: `Helper · ${char.name}` })
+        navigate(`/helper/${chat.id}`)
       } else {
-        const chat = await api.chats.create({ character_id: char.id, title: `Chat con ${char.name}` })
-        navigate(`/chat/${chat.id}`)
+        const existing = await api.chats.list(char.id)
+        if (Array.isArray(existing) && existing.length > 0) {
+          navigate(`/chat/${existing[0].id}`)
+        } else {
+          const chat = await api.chats.create({ character_id: char.id, title: `Chat con ${char.name}` })
+          navigate(`/chat/${chat.id}`)
+        }
       }
     } catch {
-      navigate('/characters')
+      navigate(mode === 'helper' ? '/characters?mode=helper' : '/characters')
     }
   }
 

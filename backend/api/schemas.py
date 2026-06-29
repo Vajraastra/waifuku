@@ -125,5 +125,50 @@ class ChatResponse(BaseModel):
     messages: List[MessageResponse]
     bookmarks: List[Dict[str, Any]]
     metadata: Dict[str, Any]
+    active_item_ids: List[str] = []
     created_at: datetime
     updated_at: datetime
+
+
+# ── Item ──────────────────────────────────────────────────────────────────────
+
+class ItemEffectSchema(BaseModel):
+    target: str
+    content: str
+
+
+class ItemCreate(BaseModel):
+    name: str
+    icon: str = "◈"
+    type: str
+    value: str = ""
+    effects: List[ItemEffectSchema] = []
+    keywords: List[str] = []
+    priority: int = 10
+
+
+class ItemUpdate(BaseModel):
+    name: Optional[str] = None
+    icon: Optional[str] = None
+    type: Optional[str] = None
+    value: Optional[str] = None
+    effects: Optional[List[ItemEffectSchema]] = None
+    keywords: Optional[List[str]] = None
+    priority: Optional[int] = None
+
+
+class ItemResponse(BaseModel):
+    id: str
+    name: str
+    icon: str
+    type: str
+    value: str
+    effects: List[ItemEffectSchema]
+    keywords: List[str]
+    priority: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class ActiveItemsUpdate(BaseModel):
+    item_ids: List[str]

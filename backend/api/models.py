@@ -510,7 +510,7 @@ async def purge_blobs():
             if not mf.is_file():
                 continue
             try:
-                data = _json.loads(mf.read_text())
+                data = _json.loads(mf.read_text(encoding="utf-8"))
                 if cfg := data.get("config"):
                     if d := cfg.get("digest"):
                         referenced.add(d.replace(":", "-"))

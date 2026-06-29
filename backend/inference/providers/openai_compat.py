@@ -26,6 +26,12 @@ class OpenAICompatProvider(BaseProvider):
             "top_p": self.config.top_p,
             "max_tokens": self.config.max_tokens,
         }
+        # Extras no-estándar: LM Studio / koboldcpp los aceptan; solo se envían cuando
+        # difieren del default para no romper servers OpenAI estrictos que rechazan params desconocidos.
+        if self.config.top_k > 0:
+            payload["top_k"] = self.config.top_k
+        if self.config.repeat_penalty != 1.0:
+            payload["repeat_penalty"] = self.config.repeat_penalty
 
         async with httpx.AsyncClient(timeout=120) as client:
             async with client.stream(

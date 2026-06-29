@@ -264,16 +264,72 @@ const S = {
     fontWeight: 700,
     cursor: 'pointer',
   },
+  avatarImg: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+  },
+  avatarPicker: {
+    width: '88px',
+    height: '88px',
+    borderRadius: '50%',
+    background: 'var(--color-surface-2)',
+    border: '2px solid var(--color-border)',
+    cursor: 'pointer',
+    position: 'relative',
+    overflow: 'hidden',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0,
+  },
+  avatarPickerImg: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+  },
+  avatarPickerInitials: {
+    fontSize: '2rem',
+    color: 'var(--color-text-faint)',
+    userSelect: 'none',
+  },
+  avatarPickerOverlay: (hov) => ({
+    position: 'absolute',
+    inset: 0,
+    background: 'rgba(0,0,0,0.55)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '0.6rem',
+    color: '#fff',
+    letterSpacing: '0.05em',
+    textTransform: 'uppercase',
+    opacity: hov ? 1 : 0,
+    transition: 'opacity 0.15s',
+  }),
 }
 
 /* ── Modal de creación / edición ─────────────────────────────────────────── */
 function PersonaModal({ persona, onSave, onClose }) {
-  const [name, setName]         = useState(persona?.name ?? '')
-  const [desc, setDesc]         = useState(persona?.description ?? '')
-  const [isDef, setIsDef]       = useState(persona?.is_default ?? false)
-  const [saving, setSaving]     = useState(false)
-  const [err, setErr]           = useState(null)
+  const [name, setName]           = useState(persona?.name ?? '')
+  const [desc, setDesc]           = useState(persona?.description ?? '')
+  const [isDef, setIsDef]         = useState(persona?.is_default ?? false)
+  const [saving, setSaving]       = useState(false)
+  const [err, setErr]             = useState(null)
+  const [avatarFile, setAvatarFile] = useState(null)
+  const [avatarPreview, setAvatarPreview] = useState(
+    persona?.avatar_path ? api.personas.avatarUrl(persona.id) : null
+  )
+  const [avatarHover, setAvatarHover] = useState(false)
+  const fileInputRef = useRef(null)
   const { t } = useTranslation()
+
+  function handleAvatarChange(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setAvatarFile(file)
+    setAvatarPreview(URL.createObjectURL(file))
+  }
 
   async function handleSave() {
     if (!name.trim()) { setErr(t('personas.name_required')); return }
@@ -281,9 +337,12 @@ function PersonaModal({ persona, onSave, onClose }) {
     setErr(null)
     try {
       const data = { name: name.trim(), description: desc.trim(), is_default: isDef }
-      const result = persona
+      let result = persona
         ? await api.personas.update(persona.id, data)
         : await api.personas.create(data)
+      if (avatarFile) {
+        result = await api.personas.uploadAvatar(result.id, avatarFile)
+      }
       onSave(result, !persona)
     } catch (e) {
       setErr(e.message)
@@ -300,6 +359,30 @@ function PersonaModal({ persona, onSave, onClose }) {
     <div style={S.backdrop} onClick={e => e.target === e.currentTarget && onClose()} onKeyDown={handleKey}>
       <div style={S.modal}>
         <h2 style={S.modalTitle}>{persona ? t('personas.modal_edit') : t('personas.modal_create')}</h2>
+
+        {/* Avatar picker */}
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <button
+            style={S.avatarPicker}
+            onClick={() => fileInputRef.current?.click()}
+            onMouseEnter={() => setAvatarHover(true)}
+            onMouseLeave={() => setAvatarHover(false)}
+            title={t('personas.avatar_change')}
+          >
+            {avatarPreview
+              ? <img src={avatarPreview} alt="" style={S.avatarPickerImg} />
+              : <span style={S.avatarPickerInitials}>{initials(name || '?')}</span>
+            }
+            <span style={S.avatarPickerOverlay(avatarHover)}>✎</span>
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={handleAvatarChange}
+          />
+        </div>
 
         <div style={S.formGroup}>
           <label style={S.label}>{t('personas.field_name')}</label>
@@ -473,7 +556,10 @@ export function PersonaManager() {
               onMouseLeave={() => setHovered(null)}
             >
               <div style={S.avatarWrap}>
-                {initials(p.name)}
+                {p.avatar_path
+                  ? <img src={`${api.personas.avatarUrl(p.id)}?v=${p.updated_at}`} alt={p.name} style={S.avatarImg} />
+                  : <span>{initials(p.name)}</span>
+                }
                 {p.is_default && <span style={S.defaultBadge}>DEFAULT</span>}
               </div>
 

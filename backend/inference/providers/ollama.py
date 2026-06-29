@@ -36,11 +36,10 @@ class OllamaProvider(BaseProvider):
                 if resp.status_code >= 400:
                     body = await resp.aread()
                     try:
-                        detail = __import__("json").loads(body).get("error", body.decode())
+                        detail = json.loads(body).get("error", body.decode())
                     except Exception:
                         detail = body.decode()
                     raise RuntimeError(f"Ollama {resp.status_code}: {detail}")
-                resp.raise_for_status()
                 in_thinking = False
 
                 async for line in resp.aiter_lines():

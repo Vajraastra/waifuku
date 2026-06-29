@@ -12,7 +12,7 @@ const STATUS = {
   ERROR:        'error',
 }
 
-export function useChat(chatId) {
+export function useChat(chatId, { helperMode = false, activeTools = [], onAgentEvent = null } = {}) {
   const ws        = useRef(null)
   const statusRef = useRef(STATUS.DISCONNECTED)
 
@@ -102,6 +102,15 @@ export function useChat(chatId) {
 
       case 'pong':
         break
+
+      case 'agent_start':
+      case 'agent_step':
+      case 'agent_result':
+      case 'agent_done':
+      case 'agent_error':
+      case 'agent_models_required':
+        onAgentEvent?.(msg)
+        break
     }
   }
 
@@ -130,6 +139,8 @@ export function useChat(chatId) {
       repeat_penalty: config.repeatPenalty,
       thinking:       config.thinking,
       num_ctx:        config.numCtx ?? 0,
+      helper_mode:    helperMode,
+      active_tools:   activeTools,
     }
 
     setPending(true)
