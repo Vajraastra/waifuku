@@ -67,6 +67,14 @@ class OllamaProvider(BaseProvider):
                             yield content_chunk
 
                         if data.get("done"):
+                            prompt_tokens = data.get("prompt_eval_count")
+                            completion_tokens = data.get("eval_count")
+                            if prompt_tokens is not None or completion_tokens is not None:
+                                self.last_usage = {
+                                    "prompt_tokens":     prompt_tokens or 0,
+                                    "completion_tokens": completion_tokens or 0,
+                                    "total_tokens":      (prompt_tokens or 0) + (completion_tokens or 0),
+                                }
                             break
                     except json.JSONDecodeError:
                         continue

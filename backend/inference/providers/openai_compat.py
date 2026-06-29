@@ -22,6 +22,8 @@ class OpenAICompatProvider(BaseProvider):
             "model": self.config.model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "stream": True,
+            # Pide el chunk final con usage real (LM Studio/OpenAI lo soportan; otros lo ignoran)
+            "stream_options": {"include_usage": True},
             "temperature": self.config.temperature,
             "top_p": self.config.top_p,
             "max_tokens": self.config.max_tokens,
@@ -47,8 +49,20 @@ class OpenAICompatProvider(BaseProvider):
                         break
                     try:
                         data = json.loads(raw)
-                        token = data["choices"][0]["delta"].get("content", "")
+                    except json.JSONDecodeError:
+                        continue
+
+                    # El chunk final (con include_usage) trae usage y choices vacío
+                    usage = data.get("usage")
+                    if usage:
+                        self.last_usage = {
+                            "prompt_tokens":     usage.get("prompt_tokens", 0),
+                            "completion_tokens": usage.get("completion_tokens", 0),
+                            "total_tokens":      usage.get("total_tokens", 0),
+                        }
+
+                    choices = data.get("choices") or []
+                    if choices:
+                        token = choices[0].get("delta", {}).get("content", "")
                         if token:
                             yield token
-                    except (json.JSONDecodeError, KeyError, IndexError):
-                        continue

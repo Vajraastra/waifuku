@@ -34,8 +34,15 @@ class ChatMessage:
 class BaseProvider(ABC):
     def __init__(self, config: ProviderConfig):
         self.config = config
+        # Usage real del último request, poblado al cerrar el stream si el server lo
+        # reporta. Forma: {"prompt_tokens", "completion_tokens", "total_tokens"}.
+        # None si el provider/server no lo expone (el caller cae a la estimación).
+        self.last_usage: dict | None = None
 
     @abstractmethod
     async def stream(self, messages: list[ChatMessage]) -> AsyncIterator[str]:
-        """Genera texto en streaming. Yield de fragmentos de texto (tokens)."""
+        """Genera texto en streaming. Yield de fragmentos de texto (tokens).
+
+        Al terminar, puede poblar `self.last_usage` con los conteos reales de tokens.
+        """
         ...

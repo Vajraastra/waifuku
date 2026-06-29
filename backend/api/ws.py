@@ -263,7 +263,25 @@ async def _handle_generate(ws: WebSocket, chat_id: str, msg: dict):
         "type": "done",
         "message_id": assistant_msg.id,
         "full_content": full_response,
+        "usage": _build_usage(provider, stats),
     })
+
+
+def _build_usage(provider, stats: dict) -> dict:
+    """Combina el usage real del provider (si lo reportó) con el presupuesto estimado.
+
+    El HUD usa `prompt_tokens` real cuando existe; si no, cae a `estimated_prompt`.
+    """
+    real = provider.last_usage or {}
+    return {
+        "prompt_tokens":     real.get("prompt_tokens"),
+        "completion_tokens": real.get("completion_tokens"),
+        "total_tokens":      real.get("total_tokens"),
+        "estimated_prompt":  stats.get("estimated_total", 0),
+        "context_budget":    stats.get("context_budget", 0),
+        "effective_budget":  stats.get("effective_budget", 0),
+        "is_real":           bool(real),
+    }
 
 
 def _log_inference(kind: str, config: ProviderConfig, stats: dict):
@@ -333,4 +351,5 @@ async def _handle_regenerate(ws: WebSocket, chat_id: str, msg: dict):
         "type": "done",
         "message_id": assistant_msg.id,
         "full_content": full_response,
+        "usage": _build_usage(provider, stats),
     })
